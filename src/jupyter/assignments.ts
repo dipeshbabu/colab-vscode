@@ -37,6 +37,7 @@ import {
   COLAB_CLIENT_AGENT_HEADER,
   COLAB_RUNTIME_PROXY_TOKEN_HEADER,
 } from '../colab/headers';
+import { waitForTimeout } from '../common/async';
 import { log } from '../common/logging';
 import { telemetry } from '../telemetry';
 import { AssignmentOutcome, CommandSource } from '../telemetry/api';
@@ -499,14 +500,7 @@ export class AssignmentManager implements Disposable {
     if (!stored) {
       return;
     }
-    const client = ProxiedJupyterClient.withStaticConnection(server);
-    await Promise.all(
-      (await client.sessions.list({ signal })).map((session) =>
-        session.id
-          ? client.sessions.delete({ session: session.id }, { signal })
-          : Promise.resolve(),
-      ),
-    );
+    await this.deleteSessions(server, signal);
     await this.client.unassign(server.endpoint, signal);
     const removed = await this.storage.remove(server.id);
     if (!removed) {
@@ -729,11 +723,15 @@ export class AssignmentManager implements Disposable {
             // For any remote servers created in Colab web UI, assuming there
             // is only one session per assignment.
             let label: string;
+            const timeout = waitForTimeout(
+              LIST_UNOWNED_SESSIONS_TIMEOUT_MS,
+              `Listing sessions timeout exceeded for endpoint ${a.endpoint}`,
+            );
             try {
-              const sessions = await this.client.listSessions(
-                a.endpoint,
-                signal,
-              );
+              const sessions = await Promise.race([
+                this.client.listSessions(a.endpoint, signal),
+                timeout.promise,
+              ]);
               label =
                 sessions.length === 1 && sessions[0].name?.length
                   ? sessions[0].name
@@ -760,6 +758,8 @@ export class AssignmentManager implements Disposable {
                 error,
               );
               label = UNKNOWN_REMOTE_SERVER_NAME;
+            } finally {
+              timeout.dispose();
             }
             return {
               label,
@@ -842,11 +842,44 @@ export class AssignmentManager implements Disposable {
       );
     }
   }
+
+  private async deleteSessions(
+    server: ColabAssignedServer,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    // Best-effort clean up sessions before unassigning the server. Without
+    // this, sessions won't immediately disconnect if there are notebooks
+    // attached in VS Code. However, we don't want to fail the entire
+    // unassignServer call because the unassign API call will eventually garbage
+    // collect and clean up the sessions too.
+    const client = ProxiedJupyterClient.withStaticConnection(server);
+    return Promise.allSettled(
+      await client.sessions
+        .list({ signal })
+        .catch((err: unknown) => {
+          // Swallow the sessions.list error as this is best-effort.
+          log.warn('Error occurred while listing sessions:', err);
+          return [];
+        })
+        .then((sessions) =>
+          sessions.map((session) =>
+            session.id
+              ? client.sessions.delete({ session: session.id }, { signal })
+              : Promise.resolve(),
+          ),
+        ),
+    ).catch((err: unknown) => {
+      // Swallow the sessions.delete errors as this is best-effort.
+      log.warn('Error occurred while deleting sessions:', err);
+    });
+  }
 }
 
 enum AssignmentsExceededActions {
   REMOVE_SERVER = 'Remove Server',
 }
+
+const LIST_UNOWNED_SESSIONS_TIMEOUT_MS = 3000;
 
 const LEARN_MORE = 'Learn More';
 

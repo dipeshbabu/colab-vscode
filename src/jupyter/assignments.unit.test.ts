@@ -58,6 +58,7 @@ import { ServerStorage } from './storage';
 
 const NOW = new Date();
 const TOKEN_EXPIRY_MS = 1000 * 60 * 60;
+const LIST_UNOWNED_SESSIONS_TIMEOUT_MS = 3000;
 
 const defaultAssignmentDescriptor: ColabServerDescriptor = {
   label: 'Colab GPU A100',
@@ -835,6 +836,34 @@ describe('AssignmentManager', () => {
       });
     });
 
+    it('falls back to placeholder label when listing sessions times out', async () => {
+      colabClientStub.listAssignments.resolves([assignmentWithName]);
+      colabClientStub.listSessions.callsFake(async () => {
+        // Block listSessions to trigger the timeout.
+        await new Promise((resolve) =>
+          setTimeout(resolve, LIST_UNOWNED_SESSIONS_TIMEOUT_MS + 100),
+        );
+        return [
+          {
+            ...defaultSession,
+            name: 'test-session-name-that-does-not-matter',
+          },
+        ];
+      });
+
+      const resultsPromise = assignmentManager.getServers('external');
+      await fakeClock.tickAsync(LIST_UNOWNED_SESSIONS_TIMEOUT_MS);
+
+      await expect(resultsPromise).to.eventually.deep.equal([
+        {
+          label: 'Untitled',
+          endpoint: endpointWithName,
+          variant: Variant.DEFAULT,
+          accelerator: '',
+        },
+      ]);
+    });
+
     describe('from all', () => {
       it('returns both assigned and unowned servers', async () => {
         // Given 3 total assignments
@@ -1605,7 +1634,29 @@ describe('AssignmentManager', () => {
         );
       });
 
-      it('keeps the server tracked if deleting a session fails', async () => {
+      it('unassigns the server even if listing session fails', async () => {
+        jupyterStub.sessions.list.rejects(new Error('list failed'));
+
+        await assignmentManager.unassignServer(defaultServer);
+
+        const serversAfter = await assignmentManager.getServers('extension');
+        expect(serversAfter).to.be.empty;
+        sinon.assert.calledOnceWithMatch(
+          colabClientStub.unassign,
+          defaultServer.endpoint,
+        );
+        sinon.assert.calledOnceWithExactly(assignmentChangeListener, {
+          added: [],
+          removed: [{ server: defaultServer, userInitiated: true }],
+          changed: [],
+        });
+        sinon.assert.calledOnceWithMatch(
+          vsCodeStub.window.showInformationMessage,
+          sinon.match(/notebooks Colab GPU A100 was/),
+        );
+      });
+
+      it('unassigns the server even if deleting session fails', async () => {
         const session = {
           id: 'mock-session-id-1',
           kernel: {
@@ -1622,24 +1673,23 @@ describe('AssignmentManager', () => {
         jupyterStub.sessions.list.resolves([session]);
         jupyterStub.sessions.delete.rejects(new Error('delete failed'));
 
-        await expect(
-          assignmentManager.unassignServer(defaultServer),
-        ).to.be.rejectedWith('delete failed');
+        await assignmentManager.unassignServer(defaultServer);
 
-        const serversAfter =
-          await assignmentManager.getLastKnownAssignedServers();
-        expect(serversAfter).to.deep.equal([
-          {
-            id: defaultServer.id,
-            label: defaultServer.label,
-            variant: defaultServer.variant,
-            accelerator: defaultServer.accelerator,
-            endpoint: defaultServer.endpoint,
-            dateAssigned: defaultServer.dateAssigned,
-          },
-        ]);
-        sinon.assert.notCalled(colabClientStub.unassign);
-        sinon.assert.notCalled(assignmentChangeListener);
+        const serversAfter = await assignmentManager.getServers('extension');
+        expect(serversAfter).to.be.empty;
+        sinon.assert.calledOnceWithMatch(
+          colabClientStub.unassign,
+          defaultServer.endpoint,
+        );
+        sinon.assert.calledOnceWithExactly(assignmentChangeListener, {
+          added: [],
+          removed: [{ server: defaultServer, userInitiated: true }],
+          changed: [],
+        });
+        sinon.assert.calledOnceWithMatch(
+          vsCodeStub.window.showInformationMessage,
+          sinon.match(/notebooks Colab GPU A100 was/),
+        );
       });
 
       it('keeps the server tracked if remote unassign fails', async () => {
