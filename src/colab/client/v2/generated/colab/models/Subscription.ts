@@ -35,11 +35,11 @@ export interface Subscription {
      */
     name?: string;
     /**
-     * User's Colab subscription tier.
+     * Required. User's Colab subscription tier.
      * @type {SubscriptionTier}
      * @memberof Subscription
      */
-    tier?: SubscriptionTier;
+    tier: SubscriptionTier;
 }
 
 
@@ -48,6 +48,7 @@ export interface Subscription {
  * Check if a given object implements the Subscription interface.
  */
 export function instanceOfSubscription(value: object): value is Subscription {
+    if (!('tier' in value) || value['tier'] === undefined) return false;
     return true;
 }
 
@@ -62,7 +63,7 @@ export function SubscriptionFromJSONTyped(json: any, ignoreDiscriminator: boolea
     return {
         
         'name': json['name'] == null ? undefined : json['name'],
-        'tier': json['tier'] == null ? undefined : SubscriptionTierFromJSON(json['tier']),
+        'tier': SubscriptionTierFromJSON(json['tier']),
     };
 }
 

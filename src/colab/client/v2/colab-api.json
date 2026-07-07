@@ -71,22 +71,23 @@
         "description": "Connection info used to authenticate to the runtime.",
         "properties": {
           "expireTime": {
-            "description": "Output only. The expiration time of the runtime proxy token.",
+            "description": "Required. Output only. The expiration time of the runtime proxy token.",
             "format": "date-time",
             "readOnly": true,
             "type": "string"
           },
           "token": {
-            "description": "Output only. The runtime proxy token. This is a short-lived credential used to\nauthenticate to the runtime.",
+            "description": "Required. Output only. The runtime proxy token. This is a short-lived credential used to\nauthenticate to the runtime.",
             "readOnly": true,
             "type": "string"
           },
           "url": {
-            "description": "Output only. The authenticated URL that can be used to connect to the runtime.",
+            "description": "Required. Output only. The authenticated URL that can be used to connect to the runtime.",
             "readOnly": true,
             "type": "string"
           }
         },
+        "required": ["token", "expireTime", "url"],
         "type": "object"
       },
       "CreateRuntimeMetadata": {
@@ -369,9 +370,10 @@
                 "$ref": "#/components/schemas/SubscriptionTier"
               }
             ],
-            "description": "User's Colab subscription tier."
+            "description": "Required. User's Colab subscription tier."
           }
         },
+        "required": ["tier"],
         "type": "object"
       },
       "SubscriptionTier": {
@@ -447,7 +449,7 @@
     "description": "colaboratory.googleapis.com API.",
     "title": "Colab API",
     "version": "v1beta",
-    "x-google-revision": "20260622"
+    "x-google-revision": "20260705"
   },
   "openapi": "3.0.3",
   "paths": {

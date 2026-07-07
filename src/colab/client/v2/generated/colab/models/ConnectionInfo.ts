@@ -21,30 +21,33 @@ import { mapValues } from '../runtime';
  */
 export interface ConnectionInfo {
     /**
-     * Output only. The expiration time of the runtime proxy token.
+     * Required. Output only. The expiration time of the runtime proxy token.
      * @type {Date}
      * @memberof ConnectionInfo
      */
-    readonly expireTime?: Date;
+    readonly expireTime: Date;
     /**
-     * Output only. The runtime proxy token. This is a short-lived credential used to
+     * Required. Output only. The runtime proxy token. This is a short-lived credential used to
      * authenticate to the runtime.
      * @type {string}
      * @memberof ConnectionInfo
      */
-    readonly token?: string;
+    readonly token: string;
     /**
-     * Output only. The authenticated URL that can be used to connect to the runtime.
+     * Required. Output only. The authenticated URL that can be used to connect to the runtime.
      * @type {string}
      * @memberof ConnectionInfo
      */
-    readonly url?: string;
+    readonly url: string;
 }
 
 /**
  * Check if a given object implements the ConnectionInfo interface.
  */
 export function instanceOfConnectionInfo(value: object): value is ConnectionInfo {
+    if (!('expireTime' in value) || value['expireTime'] === undefined) return false;
+    if (!('token' in value) || value['token'] === undefined) return false;
+    if (!('url' in value) || value['url'] === undefined) return false;
     return true;
 }
 
@@ -58,9 +61,9 @@ export function ConnectionInfoFromJSONTyped(json: any, ignoreDiscriminator: bool
     }
     return {
         
-        'expireTime': json['expireTime'] == null ? undefined : (new Date(json['expireTime'])),
-        'token': json['token'] == null ? undefined : json['token'],
-        'url': json['url'] == null ? undefined : json['url'],
+        'expireTime': (new Date(json['expireTime'])),
+        'token': json['token'],
+        'url': json['url'],
     };
 }
 
